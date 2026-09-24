@@ -153,6 +153,74 @@ class FomodDbExplorer(mobase.IPluginTool):
     # a new fomod_db_explorer_<code>.json file to the translations/ folder.
     SUPPORTED_LANGUAGES = {'en', 'es', 'de', 'fr', 'it', 'ja', 'ko', 'pl', 'pt', 'ru', 'zh'}
 
+    # Tabla de mapeo de nombres comunes → código ISO 639-1.
+    # Acepta 'Spanish', 'Español', 'spa', 'es-ES', 'es_ES.UTF-8', etc.
+    _LANGUAGE_NAME_TO_CODE: Dict[str, str] = {
+        # Inglés
+        'english': 'en', 'eng': 'en', 'en': 'en',
+        # Español
+        'spanish': 'es', 'espanol': 'es', 'español': 'es', 'spa': 'es', 'es': 'es',
+        # Alemán
+        'german': 'de', 'deutsch': 'de', 'deu': 'de', 'de': 'de',
+        # Francés
+        'french': 'fr', 'francais': 'fr', 'français': 'fr', 'fra': 'fr', 'fr': 'fr',
+        # Italiano
+        'italian': 'it', 'italiano': 'it', 'ita': 'it', 'it': 'it',
+        # Japonés
+        'japanese': 'ja', 'ja': 'ja', 'jpn': 'ja',
+        # Coreano
+        'korean': 'ko', 'ko': 'ko', 'kor': 'ko',
+        # Polaco
+        'polish': 'pl', 'polski': 'pl', 'pol': 'pl', 'pl': 'pl',
+        # Portugués
+        'portuguese': 'pt', 'portugues': 'pt', 'português': 'pt', 'por': 'pt', 'pt': 'pt',
+        # Ruso
+        'russian': 'ru', 'russkiy': 'ru', 'rus': 'ru', 'ru': 'ru',
+        # Chino
+        'chinese': 'zh', 'zhongwen': 'zh', 'zho': 'zh', 'zh': 'zh',
+    }
+
+    @classmethod
+    def _normalize_language_code(cls, raw: Optional[str]) -> Optional[str]:
+        """Convierte cualquier variante de código/nombre de idioma en un
+        código ISO 639-1 de 2 letras, o devuelve None si no se reconoce.
+
+        Acepta: 'es', 'es_ES', 'es-ES', 'es.UTF-8', 'es-MX', 'spa',
+                'Spanish', 'Español', etc.
+        Devuelve: 'es' / 'en' / 'de' / ... / None
+        """
+        if not raw or not isinstance(raw, str):
+            return None
+        s = raw.strip().lower()
+        if not s:
+            return None
+
+        # 1. Coincidencia directa con la tabla
+        if s in cls._LANGUAGE_NAME_TO_CODE:
+            return cls._LANGUAGE_NAME_TO_CODE[s]
+
+        # 2. Extraer la parte primaria del locale ('es-ES.UTF-8' -> 'es')
+        #    Usar regex para dividir por cualquier combinación de _ - . de una vez.
+        import re
+        parts = re.split(r'[._\-]', s)
+        primary = parts[0].strip() if parts else ''
+        if not primary:
+            return None
+
+        # 3. ¿La parte primaria está en la tabla?
+        if primary in cls._LANGUAGE_NAME_TO_CODE:
+            return cls._LANGUAGE_NAME_TO_CODE[primary]
+
+        # 4. 2 letras alfabéticas → asumir ISO 639-1
+        if len(primary) == 2 and primary.isalpha():
+            return primary
+
+        # 5. 3 letras alfabéticas → intentar como ISO 639-3
+        if len(primary) == 3 and primary.isalpha() and primary in cls._LANGUAGE_NAME_TO_CODE:
+            return cls._LANGUAGE_NAME_TO_CODE[primary]
+
+        return None
+
     @staticmethod
     def _is_valid_language_code(code: str) -> bool:
         """Return True if the code is a 2-letter lowercase ISO 639-1 code
@@ -160,8 +228,6 @@ class FomodDbExplorer(mobase.IPluginTool):
         if not code or not isinstance(code, str):
             return False
         c = code.strip().lower()
-        # Accept any 2-letter code (we'll fall back to English if no file exists),
-        # but reject things like 'c' (C locale), 'posix', '', or 3-letter codes.
         if len(c) != 2:
             return False
         if not (c[0].isalpha() and c[1].isalpha()):
@@ -169,64 +235,134 @@ class FomodDbExplorer(mobase.IPluginTool):
         return True
 
     def _detect_language(self) -> str:
-        """Detect the user's preferred language from MO2 settings.
-        Tries (in order):
-          1. MO2's IOrganizer.setting('language') / 'locale' / 'Settings\\language'
-          2. ModOrganizer.ini [Settings] language / locale
-          3. System locale (locale.getdefaultlocale()) -> System locale (locale.getlocale()) python 3.15
-          4. Falls back to 'en'
-        Only accepts valid 2-letter ISO 639-1 codes; rejects things like 'c' or 'POSIX'.
+        """Detecta el idioma preferido del usuario.
+
+        Orden de intento:
+          1. IOrganizer.setting('language') / 'locale' / 'Settings/language'
+             / 'Settings\\\\language'
+          2. ModOrganizer.ini en CUALQUIERA de estas ubicaciones:
+               - Path.cwd() / "ModOrganizer.ini"        (instalación portable)
+               - basePath() / "ModOrganizer.ini"        (instancia global)
+          3. Variables de entorno: LC_ALL, LC_MESSAGES, LANG, LANGUAGE
+          4. locale.getlocale() (previa inicialización con setlocale(LC_ALL, ''))
+          5. 'en' como fallback final
         """
-        # 1. MO2's official setting API
+        # 1. API oficial de MO2 (probar varias variantes del nombre de setting)
         try:
-            for setting_name in ['language', 'locale', 'Settings\\language']:
+            for setting_name in (
+                'language', 'locale',
+                'Settings/language',          # MO2 usa '/' internamente
+                'Settings\\language',         # algunas versiones exponen con '\\'
+            ):
                 try:
                     val = self._organizer.setting(setting_name)
                     if val and isinstance(val, str):
-                        lang = val.lower()[:2]
-                        if self._is_valid_language_code(lang):
-                            self._debug_log(f"[I18N] Detected language via setting '{setting_name}': {lang}")
+                        lang = self._normalize_language_code(val)
+                        if lang and self._is_valid_language_code(lang):
+                            self._debug_log(
+                                f"[I18N] Detected language via setting "
+                                f"'{setting_name}' (raw='{val}') -> '{lang}'"
+                            )
                             return lang
                 except Exception:
                     continue
         except Exception:
             pass
 
-        # 2. ModOrganizer.ini
+        # 2. ModOrganizer.ini — buscar en múltiples ubicaciones
         try:
-            ini_path = Path(self._organizer.basePath()) / "ModOrganizer.ini"
-            if ini_path.exists():
-                import configparser
-                cfg = configparser.ConfigParser()
-                cfg.read(ini_path, encoding='utf-8')
-                for section in ['Settings', 'General']:
-                    if section in cfg:
-                        for key in ['language', 'locale']:
-                            if key in cfg[section]:
-                                val = cfg[section][key].strip().lower()
-                                lang = val[:2]
-                                if self._is_valid_language_code(lang):
-                                    self._debug_log(f"[I18N] Detected language from INI [{section}]{key}: {lang}")
-                                    return lang
-        except Exception as e:
-            self._debug_log(f"[I18N] Could not read ModOrganizer.ini: {e}")
+            import configparser
+            ini_candidates = []
+            # 2a. Directorio de instalación de MO2 (= cwd en instalaciones estándar/portable)
+            try:
+                ini_candidates.append(Path.cwd() / "ModOrganizer.ini")
+            except Exception:
+                pass
+            # 2b. Directorio de instancia (basePath)
+            try:
+                ini_candidates.append(Path(self._organizer.basePath()) / "ModOrganizer.ini")
+            except Exception:
+                pass
 
-        # 3. System locale
+            for ini_path in ini_candidates:
+                try:
+                    if not ini_path.exists():
+                        continue
+                    cfg = configparser.ConfigParser()
+                    # MO2 normalmente usa UTF-8; si hay BOM/cp1252, reintentar
+                    try:
+                        cfg.read(ini_path, encoding='utf-8')
+                    except UnicodeDecodeError:
+                        cfg.read(ini_path, encoding='cp1252')
+
+                    for section in ('Settings', 'General', 'GeneralSettings'):
+                        if section not in cfg:
+                            continue
+                        for key in ('language', 'locale', 'Language', 'Locale'):
+                            if key not in cfg[section]:
+                                continue
+                            raw_val = cfg[section][key].strip()
+                            if not raw_val:
+                                continue
+                            lang = self._normalize_language_code(raw_val)
+                            if lang and self._is_valid_language_code(lang):
+                                self._debug_log(
+                                    f"[I18N] Detected language from INI "
+                                    f"{ini_path.name} [{section}]{key} "
+                                    f"(raw='{raw_val}') -> '{lang}'"
+                                )
+                                return lang
+                except Exception as e:
+                    self._debug_log(f"[I18N] Error reading {ini_path}: {e}")
+                    continue
+        except Exception as e:
+            self._debug_log(f"[I18N] INI detection block failed: {e}")
+
+        # 3. Variables de entorno del sistema (cross-platform, robusto)
         try:
-            import locale
-            #loc = locale.getdefaultlocale()[0] or ''
-            loc = locale.getlocale()[0] or ''
-            if loc:
-                lang = loc.split('_')[0].lower()
-                if self._is_valid_language_code(lang):
-                    self._debug_log(f"[I18N] Detected language from system locale: {lang}")
+            import os
+            for env_var in ('LC_ALL', 'LC_MESSAGES', 'LANG', 'LANGUAGE'):
+                val = os.environ.get(env_var, '').strip()
+                if not val:
+                    continue
+                lang = self._normalize_language_code(val)
+                if lang and self._is_valid_language_code(lang):
+                    self._debug_log(
+                        f"[I18N] Detected language from env "
+                        f"{env_var}='{val}' -> '{lang}'"
+                    )
                     return lang
-                else:
-                    self._debug_log(f"[I18N] System locale '{loc}' is not a valid 2-letter code, ignoring")
         except Exception:
             pass
 
-        self._debug_log("[I18N] Could not detect language, using 'en'")
+        # 4. locale.getlocale() — pero primero inicializar el locale del proceso
+        try:
+            import locale
+            try:
+                # Sin este setlocale, getlocale() devuelve ('C','UTF-8') o
+                # (None, None) en Windows — bug que hacía fallar siempre esta vía.
+                locale.setlocale(locale.LC_ALL, '')
+            except Exception:
+                pass  # no crítico si falla
+
+            loc = locale.getlocale()[0] or ''
+            if loc:
+                lang = self._normalize_language_code(loc)
+                if lang and self._is_valid_language_code(lang):
+                    self._debug_log(
+                        f"[I18N] Detected language from system locale "
+                        f"'{loc}' -> '{lang}'"
+                    )
+                    return lang
+                else:
+                    self._debug_log(
+                        f"[I18N] System locale '{loc}' could not be normalized, "
+                        f"ignoring"
+                    )
+        except Exception as e:
+            self._debug_log(f"[I18N] System locale detection failed: {e}")
+
+        self._debug_log("[I18N] Could not detect language, using 'en' (fallback)")
         return "en"
 
     def _find_translation_file(self, lang: str) -> Optional[Path]:
@@ -374,7 +510,7 @@ class FomodDbExplorer(mobase.IPluginTool):
             "alert.reload_success": "DB reloaded.\n\nFile: {file}\nMods: {mods}\nOptions: {options}",
             "alert.reload_failed": "Reload failed: {error}",
             "alert.db_not_found": "NOT FOUND",
-            "footer.version": "FOMOD DB Explorer v3.0.1",
+            "footer.version": "FOMOD DB Explorer v3.1.3",
             "footer.reads_db": "Reads fomod.db created by FOMOD+",
             "footer.db_file": "DB file: {file}",
             "footer.profile": "Profile:",
@@ -509,7 +645,11 @@ class FomodDbExplorer(mobase.IPluginTool):
         return "Browse the FOMOD+ database (fomod.db) with a searchable, collapsible web UI."
 
     def version(self) -> mobase.VersionInfo:
-        return mobase.VersionInfo(3, 0, 1)
+        # VersionInfo(major, minor, patch) — sin release_type para máxima compatibilidad
+        try:
+            return mobase.VersionInfo(3, 1, 3)
+        except Exception:
+            return mobase.VersionInfo(3, 1, 3, 0)
 
     def settings(self) -> List[mobase.PluginSetting]:
         return [
@@ -822,65 +962,127 @@ class FomodDbExplorer(mobase.IPluginTool):
     # ==================== Dependency Analyzer ====================
 
     def _get_active_plugins(self) -> set:
-        """Get the set of currently active plugin filenames (.esp/.esm/.esl) from MO2.
-        Tries multiple methods in order, since the MO2 Python API can vary between
-        versions and the activePlugins() method sometimes returns empty unexpectedly.
+        """Obtiene el conjunto de plugins actualmente activos (.esp/.esm/.esl) desde MO2.
+        Probar varios métodos en orden, porque la API Python de MO2 cambia entre versiones
+        y activePlugins()/allPlugins() NO existen en mobase.IPluginList moderno.
+
+        Métodos reales de mobase.IPluginList:
+          - pluginList.names()        → lista TODOS los nombres (str)
+          - pluginList.state(name)    → int con flags (STATE_ACTIVE | STATE_INACTIVE | STATE_MISSING)
         """
         active = set()
 
-        # ---------- Method 1: organizer.pluginList().activePlugins() ----------
+        # ---------- Método 1: organizer.pluginList().names() + state(name) ----------
         try:
             plugin_list = self._organizer.pluginList()
             if plugin_list is not None:
-                # 1a: Try activePlugins() method
+                # Resolver el flag STATE_ACTIVE de forma robusta (cambia entre versiones)
+                # Código fuente real de MO2 (src/mobase/ipluginlist.h):
+                #   STATE_ACTIVE   = 0x01   ← es 1, NO 4
+                #   STATE_INACTIVE = 0x02
+                #   STATE_MISSING  = 0x04
+                #   STATE_ESL      = 0x08
+                #   STATE_LIGHT    = 0x10
+                active_flag = None
                 try:
-                    raw = plugin_list.activePlugins()
-                    count = 0
-                    for name in raw:
-                        # Handle both str and QString-wrapped objects
-                        name_str = str(name)
-                        active.add(name_str.lower())
-                        count += 1
-                    self._debug_log(f"[DEP_ANALYZE] Method 1a (activePlugins()): {count} plugins")
-                    if count > 0:
-                        return active
+                    active_flag = int(mobase.IPluginList.STATE_ACTIVE)
+                except (AttributeError, TypeError, ValueError):
+                    pass
+                if not active_flag:
+                    # Fallback: valor estándar MO2 moderno (STATE_ACTIVE = 1)
+                    active_flag = 1
+
+                # 1a: Usar names() + state() — API moderna y correcta
+                try:
+                    all_names = None
+                    # names() es el método moderno, pluginNames() es el alias legacy
+                    for method_name in ('names', 'pluginNames'):
+                        try:
+                            method = getattr(plugin_list, method_name, None)
+                            if method is None:
+                                continue
+                            result = method()
+                            if result:
+                                all_names = list(result)
+                                self._debug_log(
+                                    f"[DEP_ANALYZE] Method 1a: {method_name}() devolvió "
+                                    f"{len(all_names)} nombres"
+                                )
+                                break
+                        except (AttributeError, TypeError):
+                            continue
+                        except Exception as e:
+                            self._debug_log(
+                                f"[DEP_ANALYZE] Method 1a: {method_name}() falló: {e}"
+                            )
+                            continue
+
+                    if all_names:
+                        count_total = 0
+                        count_active = 0
+                        for name in all_names:
+                            name_str = str(name)
+                            count_total += 1
+                            try:
+                                state_val = plugin_list.state(name_str)
+                                # state puede ser int o un enum con valor int
+                                try:
+                                    state_int = int(state_val)
+                                except (TypeError, ValueError):
+                                    state_int = 0
+                                # Comprobar el flag de activo (bitmask AND)
+                                if state_int & active_flag:
+                                    active.add(name_str.lower())
+                                    count_active += 1
+                            except Exception:
+                                pass
+                        self._debug_log(
+                            f"[DEP_ANALYZE] Method 1a (names+state): "
+                            f"{count_total} total, {count_active} activos "
+                            f"(active_flag={active_flag})"
+                        )
+                        # Diagnóstico: si 0 activos pero hay plugins, mostrar muestra
+                        if count_active == 0 and count_total > 0:
+                            sample_states = []
+                            for sname in list(all_names)[:5]:
+                                try:
+                                    sv = plugin_list.state(str(sname))
+                                    sample_states.append((str(sname), int(sv) if sv else 0))
+                                except Exception:
+                                    pass
+                            self._debug_log(
+                                f"[DEP_ANALYZE] Method 1a: WARNING 0 activos de "
+                                f"{count_total}. Muestra de estados: {sample_states}"
+                            )
+                        # IMPORTANTE: NO retornar aquí ni confiar en el resultado
+                        # de la API. En muchas versiones de MO2, state() devuelve
+                        # valores que no siguen el enum estándar y producen falsos
+                        # negativos masivos. La API queda solo con fines diagnósticos.
+                        # Siempre caemos al método 2 (plugins.txt) que es la fuente
+                        # confiable.
+                        self._debug_log(
+                            "[DEP_ANALYZE] Method 1a: resultado de API ignorado, "
+                            "usando plugins.txt como fuente primaria"
+                        )
+                        active = set()  # descartar resultado de API
+                    else:
+                        self._debug_log(
+                            "[DEP_ANALYZE] Method 1a: ni names() ni pluginNames() "
+                            "devolvieron resultados"
+                        )
                 except AttributeError as e:
                     self._debug_log(f"[DEP_ANALYZE] Method 1a failed (AttributeError): {e}")
                 except Exception as e:
                     self._debug_log(f"[DEP_ANALYZE] Method 1a failed: {e}")
-
-                # 1b: Try allPlugins() + state(name) check
-                try:
-                    all_raw = plugin_list.allPlugins()
-                    count_total = 0
-                    count_active = 0
-                    for name in all_raw:
-                        name_str = str(name)
-                        count_total += 1
-                        try:
-                            state = plugin_list.state(name_str)
-                            # PluginState enum: in most MO2 versions,
-                            #   STATE_ACTIVE = 1, STATE_INACTIVE = 0, STATE_MISSING = 2
-                            # But be defensive and check multiple ways
-                            state_int = int(state) if not isinstance(state, int) else state
-                            if state_int == 1:
-                                active.add(name_str.lower())
-                                count_active += 1
-                        except Exception:
-                            pass
-                    self._debug_log(f"[DEP_ANALYZE] Method 1b (allPlugins+state): {count_total} total, {count_active} active")
-                    if count_active > 0:
-                        return active
-                except AttributeError as e:
-                    self._debug_log(f"[DEP_ANALYZE] Method 1b failed (AttributeError): {e}")
-                except Exception as e:
-                    self._debug_log(f"[DEP_ANALYZE] Method 1b failed: {e}")
         except Exception as e:
             self._debug_log(f"[DEP_ANALYZE] pluginList() failed: {e}")
 
-        # ---------- Method 2: Read plugins.txt from active profile ----------
+        # ---------- Método 2: Leer plugins.txt del perfil activo ----------
+        # SIEMPRE se ejecuta. Es la fuente primaria y confiable de plugins activos
+        # porque es lo que MO2 escribe a disco cuando el usuario marca/desmarca
+        # un plugin en la lista.
         if not active:
-            self._debug_log("[DEP_ANALYZE] API methods returned empty, trying plugins.txt fallback...")
+            self._debug_log("[DEP_ANALYZE] Using plugins.txt as primary source for active plugins...")
             active = self._read_active_plugins_from_profile()
 
         # ---------- Method 3: Add always-loaded .esm/.esl from loadorder.txt ----------
@@ -1057,20 +1259,46 @@ class FomodDbExplorer(mobase.IPluginTool):
         return active
 
     def _get_all_known_plugins(self) -> set:
-        """Get all known plugins (active + inactive) from MO2's plugin list.
-        Tries the API first, then falls back to reading loadorder.txt.
+        """Obtiene todos los plugins conocidos (activos + inactivos) desde la lista de MO2.
+        Intenta primero la API, y si falla lee loadorder.txt como respaldo.
         """
         known = set()
-        # Method 1: API
+        # Método 1: API — usar names() (moderno) o pluginNames() (legacy)
         try:
             plugin_list = self._organizer.pluginList()
             if plugin_list is not None:
                 try:
-                    for name in plugin_list.allPlugins():
-                        known.add(str(name).lower())
-                    self._debug_log(f"[DEP_ANALYZE] allPlugins() API returned {len(known)} plugins")
-                    if known:
-                        return known
+                    all_names = None
+                    for method_name in ('names', 'pluginNames'):
+                        try:
+                            method = getattr(plugin_list, method_name, None)
+                            if method is None:
+                                continue
+                            result = method()
+                            if result:
+                                all_names = list(result)
+                                break
+                        except (AttributeError, TypeError):
+                            continue
+                        except Exception as e:
+                            self._debug_log(
+                                f"[DEP_ANALYZE] allPlugins {method_name}() failed: {e}"
+                            )
+                            continue
+
+                    if all_names:
+                        for name in all_names:
+                            known.add(str(name).lower())
+                        self._debug_log(
+                            f"[DEP_ANALYZE] API ({method_name}) returned {len(known)} plugins"
+                        )
+                        if known:
+                            return known
+                    else:
+                        self._debug_log(
+                            "[DEP_ANALYZE] allPlugins() API: ni names() ni pluginNames() "
+                            "devolvieron resultados"
+                        )
                 except Exception as e:
                     self._debug_log(f"[DEP_ANALYZE] allPlugins() API failed: {e}")
         except Exception as e:
@@ -1275,6 +1503,12 @@ class FomodDbExplorer(mobase.IPluginTool):
                             if source_mod and source_mod != mod_name:
                                 mod_graph[mod_name].add(source_mod)
 
+                    # Asignar selection_state aquí para que esté definida en ambas
+                    # ramas del if/else siguiente (missing o no missing). Sin esto,
+                    # si missing=True, la variable quedaba sin asignar y provocaba
+                    # UnboundLocalError más abajo.
+                    selection_state = opt.get('selectionState', 'Available')
+
                     if missing:
                         report['options_missing'] += 1
                         report['missing_details'].append({
@@ -1289,7 +1523,6 @@ class FomodDbExplorer(mobase.IPluginTool):
                         })
                     else:
                         report['options_all_ok'] += 1
-                        selection_state = opt.get('selectionState', 'Available')
                         if selection_state != 'Selected':
                             report['options_unselected_with_masters'] += 1
                             report['unselected_details'].append({
@@ -2415,7 +2648,7 @@ button.gray { background: var(--gray); border-color: var(--gray); color: white; 
   <div class="header">
     <h1>📦 <span data-i18n="app.title">FOMOD DB Explorer</span> <span style="font-size: 13px; font-weight: 400; color: var(--text-dim);" data-i18n="app.subtitle">Browse all FOMOD mods and their options from the FOMOD+ database</span></h1>
     <div class="status-bar" style="border: none; padding: 0; margin: 0; background: transparent;">
-      <span class="status-item version"><span data-i18n="footer.version">FOMOD DB Explorer v3.0.1</span></span>
+      <span class="status-item version"><span data-i18n="footer.version">FOMOD DB Explorer v3.1.3</span></span>
       <span class="status-divider"></span>
       <span class="status-item">
         <span data-i18n="footer.profile">Profile:</span> <span id="profileName">...</span>

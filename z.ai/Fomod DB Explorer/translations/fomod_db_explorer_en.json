@@ -60,7 +60,7 @@
   "alert.db_not_found": "NOT FOUND",
   "alert.search_failed": "Search failed: {error}",
   "alert.empty_data": "No data loaded",
-  "footer.version": "FOMOD DB Explorer v3.0.1",
+  "footer.version": "FOMOD DB Explorer v3.1.3",
   "footer.reads_db": "Reads fomod.db created by FOMOD+",
   "footer.db_file": "DB file: {file}",
   "footer.profile": "Profile:",
