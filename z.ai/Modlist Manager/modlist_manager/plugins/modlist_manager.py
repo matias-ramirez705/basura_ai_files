@@ -17,7 +17,7 @@ Enfoque:
   - Settings en MO2: puerto, auto-start, debug, rotacion diaria de logs.
 
 Autor: Krou705
-Version: 3.0.1
+Version: 3.2.0
 """
 
 import os
@@ -826,6 +826,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 5px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+/*EXTENSION_CSS*/
 </style>
 </head>
 <body>
@@ -858,6 +859,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
   <button class="tab" data-tab="backups" data-i18n="tabs.backups">Respaldos</button>
   <button class="tab" data-tab="plugins" data-i18n="tabs.plugins">Plugins</button>
   <button class="tab" data-tab="versions" data-i18n="tabs.versions">Versiones</button>
+  <!--EXTENSION_TAB-->
   <button class="tab" data-tab="import_export" data-i18n="tabs.import_export">Importar / Exportar</button>
 </div>
 
@@ -920,12 +922,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
           <tr>
             <th class="col-status" data-col="status" data-i18n="modlist.col_status">Act</th>
             <th class="col-priority" data-col="priority" data-i18n="modlist.col_order">#</th>
+            <th id="th-trad" style="display:none;width:60px;text-align:center;">Trad</th>
             <th class="col-name" data-col="name" data-i18n="modlist.col_name">Mod</th>
             <th class="col-category" data-col="category" data-i18n="modlist.col_category">Categoria</th>
             <th class="col-version" data-col="version" data-i18n="modlist.col_version">Version</th>
             <th class="col-comment" data-col="comment" data-i18n="modlist.col_comment">Comentario</th>
             <th class="col-comment2" data-col="comment2" data-i18n="modlist.col_comment2">Comentario 2</th>
             <th class="col-link" data-col="link" data-i18n="modlist.col_link">Link</th>
+            <th style="width:40px;text-align:center;">📂</th>
           </tr>
         </thead>
         <tbody id="modlist-tbody"></tbody>
@@ -1033,6 +1037,16 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
           <option value="with" data-i18n="plugins.filter_with">Con plugins</option>
           <option value="without" data-i18n="plugins.filter_without">Sin plugins</option>
           <option value="light" data-i18n="plugins.filter_light">Light (.esl / ESPFE)</option>
+          <option value="esp" data-i18n="plugins.filter_esp">ESP estandar</option>
+          <option value="standard" data-i18n="plugins.filter_standard">Standard</option>
+          <option value="esm" data-i18n="plugins.filter_esm">ESM</option>
+          <option value="base" data-i18n="plugins.filter_base">Base Game</option>
+        </select>
+        <select class="select" id="plugins-sort">
+          <option value="name" data-i18n="plugins.sort_name">Ordenar: Nombre</option>
+          <option value="count" data-i18n="plugins.sort_count">Ordenar: Cantidad</option>
+          <option value="type" data-i18n="plugins.sort_type">Ordenar: Tipo</option>
+          <option value="active" data-i18n="plugins.sort_active">Ordenar: Activo</option>
         </select>
         <button class="btn btn-sm" id="btn-plugins-refresh" data-i18n="plugins.scan">Escanear</button>
       </div>
@@ -1042,7 +1056,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
             <th class="col-status" data-i18n="modlist.col_status">Act</th>
             <th class="col-name" data-i18n="modlist.col_name">Mod</th>
             <th data-i18n="plugins.col_files" style="max-width:400px;">Archivos de plugin</th>
-            <th data-i18n="plugins.col_count">Slots</th>
+            <th data-i18n="plugins.col_count" style="width:80px;">Cant.</th>
             <th data-i18n="plugins.col_type">Tipo</th>
           </tr></thead>
           <tbody id="plugins-tbody"></tbody>
@@ -1276,6 +1290,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
     <div id="io-view-detail" class="editor-diff" style="margin-top:14px;"></div>
   </section>
 
+  <!--EXTENSION_PANEL-->
 </div>
 
 <!-- Modal de color para separadores -->
@@ -1419,19 +1434,21 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
       this.render();
     });
     document.getElementById("search-input").addEventListener("input",debounce(e=>{this.filters.search=e.target.value.toLowerCase();this.render();},200));
-    document.getElementById("filter-separator").addEventListener("change",async e=>{
+    document.getElementById("filter-separator").addEventListener("change",e=>{
       this.filters.separator=e.target.value;
       const sepName=e.target.value;
       if(sepName&&this.lastState){
-        // Contraer todos los separadores menos el seleccionado
+        // Optimizacion: actualizar estado local inmediatamente
         for(const s of this.lastState.sections){
-          if(s.separator&&s.separator.name!==sepName){
-            await Api.setCollapse(s.separator.name,true);
+          if(s.separator){
+            const shouldCollapse=s.separator.name!==sepName;
+            if(s.collapsed!==shouldCollapse){
+              s.collapsed=shouldCollapse;
+              Api.setCollapse(s.separator.name,shouldCollapse).catch(()=>{});
+            }
           }
         }
-        // Expandir el seleccionado
-        await Api.setCollapse(sepName,false);
-        await this.refresh();
+        this.render();
         // Hacer scroll hasta el separador
         setTimeout(()=>{
           const row=document.querySelector(`tr.sep-row[data-modname="${CSS.escape(sepName)}"]`);
@@ -1440,9 +1457,12 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
       }else if(this.lastState){
         // "Todos los separadores": expandir todo
         for(const s of this.lastState.sections){
-          if(s.separator)await Api.setCollapse(s.separator.name,false);
+          if(s.separator&&s.collapsed){
+            s.collapsed=false;
+            Api.setCollapse(s.separator.name,false).catch(()=>{});
+          }
         }
-        await this.refresh();
+        this.render();
       }else{
         this.render();
       }
@@ -1450,8 +1470,16 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
     document.getElementById("filter-status").addEventListener("change",e=>{this.filters.status=e.target.value;this.render();});
     document.getElementById("filter-category").addEventListener("change",e=>{this.filters.category=e.target.value;this.render();});
     document.getElementById("filter-tags").addEventListener("change",e=>{this.filters.tags=e.target.value;this.render();});
-    document.getElementById("btn-expand-all").addEventListener("click",async()=>{if(!this.lastState)return;for(const s of this.lastState.sections){if(s.separator)await Api.setCollapse(s.separator.name,false);}await this.refresh();});
-    document.getElementById("btn-collapse-all").addEventListener("click",async()=>{if(!this.lastState)return;for(const s of this.lastState.sections){if(s.separator)await Api.setCollapse(s.separator.name,true);}await this.refresh();});
+    document.getElementById("btn-expand-all").addEventListener("click",()=>{
+      if(!this.lastState)return;
+      for(const s of this.lastState.sections){if(s.separator){s.collapsed=false;Api.setCollapse(s.separator.name,false).catch(()=>{});}}
+      this.render();
+    });
+    document.getElementById("btn-collapse-all").addEventListener("click",()=>{
+      if(!this.lastState)return;
+      for(const s of this.lastState.sections){if(s.separator){s.collapsed=true;Api.setCollapse(s.separator.name,true).catch(()=>{});}}
+      this.render();
+    });
     document.getElementById("btn-sync-mo2").addEventListener("click",async()=>{
       try{
         showToast(I18n.t("modlist.syncing_mo2"),"info");
@@ -1537,8 +1565,12 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
         const sepName=tr.dataset.modname;
         const sec=this.lastState.sections.find(s=>s.separator&&s.separator.name===sepName);
         if(sec){
-          await Api.setCollapse(sepName,!sec.collapsed);
-          await this.refresh();
+          // Optimizacion: actualizar estado local y re-renderizar inmediatamente
+          // sin esperar a la llamada API. Guardar en backend en segundo plano.
+          sec.collapsed=!sec.collapsed;
+          this.render();
+          // Guardar en backend sin esperar (fire and forget)
+          Api.setCollapse(sepName,sec.collapsed).catch(()=>{});
         }
       }
     });
@@ -1612,6 +1644,18 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
       if(!this._draggedMod||this._draggedMod===targetName)return;
       await this.reorderMods(this._draggedMod,targetName);
     });
+    // Click en boton de carpeta
+    tb.addEventListener("click",async(e)=>{
+      if(e.target.classList.contains("modlist-folder-btn")){
+        e.stopPropagation();
+        const modname=e.target.dataset.modname;
+        try{
+          const r=await fetch("/api/open_mod_folder/"+encodeURIComponent(modname),{method:"POST"});
+          const d=await r.json();
+          if(!d.ok)throw new Error(d.error);
+        }catch(err){showToast(I18n.t("topbar.error")+": "+err.message,"error");}
+      }
+    });
   },
   initResizableColumns(){
     const t=document.getElementById("modlist-table");if(!t)return;
@@ -1639,14 +1683,17 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
   },
   _computeStateHash(s){
     // Hash simple: combina stats + numero de mods + updated_at + filtros activos
-    // Si alguno cambia, re-renderiza. Si no, skip.
+    // + estado de colapso de separadores
     const st=s.stats||{};
     const f=this.filters;
+    // Incluir estado de colapso de separadores en el hash
+    const collapseState=(s.sections||[]).map(sec=>sec.collapsed?"1":"0").join("");
     return JSON.stringify({
       t:st.total,a:st.active,i:st.inactive,m:st.missing,s:st.separators,
       ua:s.updated_at||"",
       fs:f.search+f.status+f.category+f.tags,
-      hd:this.hideDeleted?"1":"0"
+      hd:this.hideDeleted?"1":"0",
+      cs:collapseState
     });
   },
   render(){
@@ -1704,7 +1751,7 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
       // Anadir indicador de carga
       const loadRow=document.createElement("tr");
       loadRow.id="modlist-load-more";
-      loadRow.innerHTML=`<td colspan="8" style="text-align:center;color:var(--accent);padding:12px;font-size:13px;">${I18n.t("modlist.loading_more").replace("{count}",htmlParts.length-CHUNK_SIZE)}</td>`;
+      loadRow.innerHTML=`<td colspan="${window.Extensions?10:9}" style="text-align:center;color:var(--accent);padding:12px;font-size:13px;">${I18n.t("modlist.loading_more").replace("{count}",htmlParts.length-CHUNK_SIZE)}</td>`;
       tb.appendChild(loadRow);
       let offset=CHUNK_SIZE;
       const renderChunk=()=>{
@@ -1720,7 +1767,7 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
           // Anadir indicador de carga para el siguiente chunk
           const lr2=document.createElement("tr");
           lr2.id="modlist-load-more";
-          lr2.innerHTML=`<td colspan="8" style="text-align:center;color:var(--accent);padding:12px;font-size:13px;">${I18n.t("modlist.loading_more").replace("{count}",htmlParts.length-offset)}</td>`;
+          lr2.innerHTML=`<td colspan="${window.Extensions?10:9}" style="text-align:center;color:var(--accent);padding:12px;font-size:13px;">${I18n.t("modlist.loading_more").replace("{count}",htmlParts.length-offset)}</td>`;
           tb.appendChild(lr2);
           requestAnimationFrame(renderChunk);
         }
@@ -1839,7 +1886,8 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
     const statusClass=m.active?"status-on":"status-off";
     const orderText=m.order_number!=null?m.order_number:"—";
     const cat=m.category_override||m.category||"";
-    const link=m.link_override||m.link;
+    // Link: usar link_override si existe, sino m.link (que ya incluye url del meta.ini)
+    const link=m.link_override||m.link||"";
     let linkHtml="";
     if(link)linkHtml=`<a href="${escapeHtml(link)}" target="_blank" rel="noopener" class="mod-link">${I18n.t("modlist.open_link")}</a>`;
     const badge=(m.deleted_from_disk)?`<span class="badge badge-deleted">${I18n.t("modlist.badge_deleted")}</span>`:"";
@@ -1849,7 +1897,19 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
     const priorityHtml=m.deleted_from_disk
       ?`<span>${orderText}</span>`
       :`<input type="number" class="priority-input" value="${m.order_number!=null?m.order_number:''}" data-modname="${escapeHtml(m.name)}" min="0" style="width:70px;background:var(--bg);border:1px solid var(--border);color:var(--text);text-align:right;border-radius:3px;padding:2px 6px;font-size:12px;">`;
-    return `<tr class="${cls}" data-modname="${escapeHtml(m.name)}"${draggable}${rowStyle}><td class="col-status">${statusContent}</td><td class="col-priority">${priorityHtml}</td><td class="col-name editable">${escapeHtml(m.display_name||m.name)}${badge}</td><td class="col-category editable">${escapeHtml(cat)}</td><td class="col-version">${escapeHtml(m.version||"")}</td><td class="col-comment">${escapeHtml(m.comment||"")}</td><td class="col-comment2 editable">${escapeHtml(m.comment2||"")}</td><td class="col-link">${linkHtml}</td></tr>`;
+    // Columna Trad (solo si la extension esta instalada)
+    let tradCellHtml="";
+    if(window.Extensions){
+      const td=(window._tradData||{})[m.name]||{};
+      const tType=td.translation_type||"";
+      const BADGE_LABELS={T:"TR",D:"DSD",M:"MCM",S:"SC",O:"SK",OT:"OT",NO:"NO"};
+      const BADGE_COLORS={T:"#2196F3",D:"#4CAF50",M:"#FF9800",S:"#9C27B0",O:"#E91E63",OT:"#00BCD4",NO:"#607D8B"};
+      const badge=tType?`<span class="trad-badge" style="background:${BADGE_COLORS[tType]||"#999"};color:white;">${BADGE_LABELS[tType]||tType}</span>`:`<span class="trad-badge trad-badge-none">—</span>`;
+      tradCellHtml=`<td style="text-align:center;width:60px;">${badge}</td>`;
+    }
+    // Boton de carpeta
+    const folderBtn=`<td style="text-align:center;width:40px;"><button type="button" class="btn btn-sm modlist-folder-btn" data-modname="${escapeHtml(m.name)}" title="Abrir carpeta" style="padding:2px 4px;font-size:11px;">📂</button></td>`;
+    return `<tr class="${cls}" data-modname="${escapeHtml(m.name)}"${draggable}${rowStyle}><td class="col-status">${statusContent}</td><td class="col-priority">${priorityHtml}</td>${tradCellHtml}<td class="col-name editable">${escapeHtml(m.display_name||m.name)}${badge}</td><td class="col-category editable">${escapeHtml(cat)}</td><td class="col-version">${escapeHtml(m.version||"")}</td><td class="col-comment">${escapeHtml(m.comment||"")}</td><td class="col-comment2 editable">${escapeHtml(m.comment2||"")}</td><td class="col-link">${linkHtml}</td>${folderBtn}</tr>`;
   },
   renderSeparatorHtml(sec,sepColors){
     // Devuelve el HTML de una fila de separador (sin event listeners - usa event delegation)
@@ -1863,7 +1923,9 @@ const ModlistTab={filters:{search:"",separator:"",status:"",category:"",tags:""}
     }
     const sepComment=sep.comment?` <span style="opacity:0.7;font-weight:400;font-size:12px;">— ${escapeHtml(sep.comment)}</span>`:"";
     const colorBtn=`<button type="button" class="sep-color-btn" data-sep-name="${escapeHtml(sep.name)}" title="${I18n.t("modlist.sep_color")}">🎨</button>`;
-    return `<tr class="${cls}" data-modname="${escapeHtml(sep.name)}" draggable="true"${styleAttr}><td colspan="8">${colorBtn}<span class="sep-toggle">${sec.collapsed?"▶":"▼"}</span> ${escapeHtml(sep.display_name||sep.name)}${sepComment}</td></tr>`;
+    // Colspan: 8 columnas base + 1 (Trad si extension) + 1 (carpeta) = 9 o 10
+    const colspan=window.Extensions?10:9;
+    return `<tr class="${cls}" data-modname="${escapeHtml(sep.name)}" draggable="true"${styleAttr}><td colspan="${colspan}">${colorBtn}<span class="sep-toggle">${sec.collapsed?"▶":"▼"}</span> ${escapeHtml(sep.display_name||sep.name)}${sepComment}</td></tr>`;
   },
   matchFilters(m){
     if(m.is_separator)return true;
@@ -2633,9 +2695,9 @@ window.NemesisTab=NemesisTab;
 
 // ==================== deleted.js ====================
 const DeletedTab={
-  data:null,search:"",filterSep:"",filterType:"",lastState:null,
+  data:null,search:"",filterSep:"",filterType:"",lastState:null,_loaded:false,
   init(){
-    document.getElementById("btn-deleted-refresh").addEventListener("click",()=>this.refresh());
+    document.getElementById("btn-deleted-refresh").addEventListener("click",()=>{this._loaded=false;this.refresh();});
     document.getElementById("deleted-search").addEventListener("input",debounce(e=>{this.search=e.target.value.toLowerCase();this.render();},200));
     document.getElementById("deleted-filter-sep").addEventListener("change",e=>{this.filterSep=e.target.value;this.render();});
     document.getElementById("deleted-filter-type").addEventListener("change",e=>{this.filterType=e.target.value;this.render();});
@@ -2643,6 +2705,12 @@ const DeletedTab={
     document.addEventListener("i18n:changed",()=>{if(this.data)this.render();});
   },
   async refresh(){
+    // Si ya tenemos datos cargados, no recargar — solo re-renderizar
+    // (el boton Actualizar fuerza recarga via _loaded=false)
+    if(this._loaded&&this.data){
+      this.render();
+      return;
+    }
     const btn=document.getElementById("btn-deleted-refresh");
     const oldText=btn.textContent;
     btn.textContent=I18n.t("deleted.scanning");
@@ -2664,6 +2732,7 @@ const DeletedTab={
         }
       }
       this.data=deletedMods;
+      this._loaded=true;
       this.populateSepFilter();
       this.render();
     }catch(e){showToast(I18n.t("topbar.error")+": "+e.message,"error");}
@@ -2749,6 +2818,7 @@ const DeletedTab={
     try{
       await Api.forgetMod(modname);
       showToast(I18n.t("deleted.forgotten_one"),"success");
+      this._loaded=false;  // invalidar cache para recargar
       await this.refresh();
       // Tambien refrescar la lista principal
       await ModlistTab.refresh();
@@ -2786,6 +2856,7 @@ const DeletedTab={
       let toastMsg=I18n.t("deleted.forgotten_all").replace("{count}",forgotten);
       if(notFound>0)toastMsg+=" ("+notFound+" "+I18n.t("deleted.not_found")+")";
       showToast(toastMsg,"success");
+      this._loaded=false;  // invalidar cache para recargar
       await this.refresh();
       await ModlistTab.refresh();
     }catch(e){showToast(I18n.t("topbar.error")+": "+e.message,"error");}
@@ -3251,13 +3322,20 @@ window.VersionsTab=VersionsTab;
 
 // ==================== plugins.js ====================
 const PluginsTab={
-  data:null,filter:"",search:"",
+  data:null,filter:"",sort:"name",search:"",_loaded:false,
   init(){
-    document.getElementById("btn-plugins-refresh").addEventListener("click",()=>this.refresh());
+    document.getElementById("btn-plugins-refresh").addEventListener("click",()=>{this._loaded=false;this.refresh();});
     document.getElementById("plugins-search").addEventListener("input",debounce(e=>{this.search=e.target.value.toLowerCase();this.render();},200));
     document.getElementById("plugins-filter").addEventListener("change",e=>{this.filter=e.target.value;this.render();});
+    document.getElementById("plugins-sort").addEventListener("change",e=>{this.sort=e.target.value;this.render();});
   },
   async refresh(){
+    // Si ya tenemos datos cargados, no recargar — solo re-renderizar
+    // (el boton Escanear fuerza recarga via _loaded=false)
+    if(this._loaded&&this.data){
+      this.render();
+      return;
+    }
     const btn=document.getElementById("btn-plugins-refresh");
     const oldText=btn.textContent;
     btn.textContent=I18n.t("plugins.scanning");
@@ -3269,6 +3347,7 @@ const PluginsTab={
       const d=await r.json();
       if(!d.ok)throw new Error(d.error);
       this.data=d.data;
+      this._loaded=true;
       this.render();
     }catch(e){showToast(I18n.t("topbar.error")+": "+e.message,"error");}
     btn.textContent=oldText;
@@ -3288,24 +3367,46 @@ const PluginsTab={
     const tb=document.getElementById("plugins-tbody");
     tb.innerHTML="";
     let mods=this.data.mods||[];
+    // Filtros
     if(this.filter==="with"){mods=mods.filter(m=>m.count>0);}
     else if(this.filter==="without"){mods=mods.filter(m=>m.count===0);}
     else if(this.filter==="light"){mods=mods.filter(m=>m.type==="Light"||m.type==="ESPFE"||m.type==="ESPFE + Light"||m.type==="Mixed");}
+    else if(this.filter==="esp"){mods=mods.filter(m=>m.files&&m.files.some(f=>(f.type||"esp")==="esp"));}
+    else if(this.filter==="standard"){mods=mods.filter(m=>m.type==="Standard");}
+    else if(this.filter==="esm"){mods=mods.filter(m=>m.files&&m.files.some(f=>f.type==="esm"));}
+    else if(this.filter==="base"){mods=mods.filter(m=>m.type==="Base Game");}
     if(this.search){mods=mods.filter(m=>(m.display_name||m.name).toLowerCase().includes(this.search));}
+    // Ordenamiento
+    const SORT_ORDER={"Standard":0,"Light":1,"ESPFE":2,"ESPFE + Light":3,"Mixed":4,"Base Game":5,"None":6};
+    if(this.sort==="name"){
+      mods.sort((a,b)=>(a.display_name||a.name).localeCompare(b.display_name||b.name));
+    }else if(this.sort==="count"){
+      mods.sort((a,b)=>(b.count||0)-(a.count||0));
+    }else if(this.sort==="type"){
+      mods.sort((a,b)=>(SORT_ORDER[a.type||"None"]??99)-(SORT_ORDER[b.type||"None"]??99));
+    }else if(this.sort==="active"){
+      mods.sort((a,b)=>(b.active?1:0)-(a.active?1:0));
+    }
+    // Color para Standard (azul, igual que ESP en la columna de archivos)
+    const STD_COLOR="var(--blue)";
     for(const m of mods){
       const tr=document.createElement("tr");
       if(!m.active)tr.style.opacity="0.5";
       const filesHtml=m.files.map(f=>{
         const t=f.type||"esp";
-        // Color segun tipo: esl nativo = verde claro, esl_flagged (ESPFE) = verde, esm = morado, esp = gris
-        const c=t==="esl"?"var(--green)":t==="esl_flagged"?"var(--green)":t==="esm"?"var(--purple)":"var(--text-dim)";
-        // Etiqueta: ESPFE para .esp marcados como ESL, ESL para .esl nativos
+        // Color: esl/ESPFE = verde, esm = morado, esp estandar = azul (igual que Standard)
+        const c=t==="esl"?"var(--green)":t==="esl_flagged"?"var(--green)":t==="esm"?"var(--purple)":STD_COLOR;
         const label=t==="esl_flagged"?" (ESPFE)":t==="esl"?" (ESL)":"";
         return `<code style="display:inline-block;margin:1px 4px;color:${c};">${escapeHtml(f.name)}${label}</code>`;
       }).join("");
-      // Color del TYPE: ESPFE y Light en verde, Mixed en naranja, Base Game en azul, Standard en gris
-      const typeColor=m.type==="ESPFE"?"var(--green)":m.type==="Light"?"var(--green)":m.type==="ESPFE + Light"?"var(--green)":m.type==="Mixed"?"var(--orange)":m.type==="Base Game"?"var(--accent)":"var(--text-dim)";
-      const typeFontWeight=(m.type==="ESPFE"||m.type==="Light"||m.type==="ESPFE + Light")?"600":"400";
+      // Color del TYPE: solo None es gris; Standard es azul
+      let typeColor;
+      if(m.type==="ESPFE"||m.type==="Light"||m.type==="ESPFE + Light")typeColor="var(--green)";
+      else if(m.type==="Mixed")typeColor="var(--orange)";
+      else if(m.type==="Base Game")typeColor="var(--accent)";
+      else if(m.type==="Standard")typeColor=STD_COLOR;
+      else typeColor="var(--text-dim)"; // None
+      const typeFontWeight=(m.type==="ESPFE"||m.type==="Light"||m.type==="ESPFE + Light"||m.type==="Standard")?"600":"400";
       tr.innerHTML=`<td class="col-status ${m.active?"status-on":"status-off"}">${m.active?"X":"O"}</td><td class="col-name">${escapeHtml(m.display_name||m.name)}</td><td>${filesHtml||"—"}</td><td style="text-align:center;font-weight:600;">${m.count||"—"}</td><td style="color:${typeColor};font-weight:${typeFontWeight};">${m.type||"—"}</td>`;
       tb.appendChild(tr);
     }
@@ -3319,6 +3420,8 @@ const App={pollMs:5000,pollTimer:null,
   async init(){
     await I18n.init();
     ModlistTab.init();DeletedTab.init();VersionsTab.init();ImportExportTab.init();NemesisTab.init();BackupsTab.init();PluginsTab.init();
+    // Inicializar extensiones si existen
+    if(window.Extensions&&Extensions.init)Extensions.init();
     document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>this.switchTab(b.dataset.tab)));
     document.getElementById("btn-refresh").addEventListener("click",()=>this.refreshAll());
     document.getElementById("refresh-toggle").addEventListener("click",()=>this.togglePause());
@@ -3334,7 +3437,9 @@ const App={pollMs:5000,pollTimer:null,
     if(n==="backups")BackupsTab.refresh();
     if(n==="deleted")DeletedTab.refresh();
     if(n==="versions"&&!VersionsTab.data)VersionsTab.refresh();
-    if(n==="plugins")PluginsTab.refresh();
+    if(n==="plugins")PluginsTab.refresh();  // refresh() usa cache si _loaded=true
+    // Notificar a extensiones del cambio de pestana
+    if(window.Extensions&&Extensions.switchTab)Extensions.switchTab(n);
   },
   async refreshAll(){
     const p=document.getElementById("profile-name");
@@ -3417,6 +3522,7 @@ const App={pollMs:5000,pollTimer:null,
   },
 };
 document.addEventListener("DOMContentLoaded",()=>App.init());
+//EXTENSION_JS
 </script>
 </body>
 </html>
@@ -3795,7 +3901,11 @@ class ModlistReader:
                 nexus_id = meta.get("modid", "")
                 if nexus_id == "0":
                     nexus_id = ""
-                link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}" if nexus_id else ""
+                # Construir link: usar nexus_id si existe, sino usar url del meta.ini
+                if nexus_id:
+                    link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}"
+                else:
+                    link = meta.get("url", "")
                 mods.append({
                     "name": name, "display_name": meta.get("name", name), "active": True,
                     "priority": priority, "raw_index": priority, "is_separator": False,
@@ -3925,7 +4035,11 @@ class ModlistReader:
                 nexus_id = meta.get("modid", "")
                 if nexus_id == "0":
                     nexus_id = ""
-                link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}" if nexus_id else ""
+                # Construir link: usar nexus_id si existe, sino usar url del meta.ini
+                if nexus_id:
+                    link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}"
+                else:
+                    link = meta.get("url", "")
                 file_ids = meta.get("file_ids", [])
                 # Construir enlaces de version especifica si hay file_id y nexus_id
                 version_links = []
@@ -4166,6 +4280,8 @@ class ModlistReader:
                 if not existing.get("link_override"):
                     if nexus_id:
                         existing["link"] = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}"
+                    elif meta.get("url", ""):
+                        existing["link"] = meta.get("url", "")
                     else:
                         existing["link"] = existing.get("link", "")
 
@@ -4218,7 +4334,11 @@ class ModlistReader:
                     nexus_id = meta.get("modid", "")
                     if nexus_id == "0":
                         nexus_id = ""
-                    link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}" if nexus_id else ""
+                    # Construir link: usar nexus_id si existe, sino usar url del meta.ini
+                if nexus_id:
+                    link = f"https://www.nexusmods.com/skyrimspecialedition/mods/{nexus_id}"
+                else:
+                    link = meta.get("url", "")
                     file_ids = meta.get("file_ids", [])
                     version_links = []
                     if nexus_id and file_ids:
@@ -4291,7 +4411,7 @@ class ModlistReader:
         out = {}
         if cp.has_section("General"):
             for k in ("modid","name","version","installation","category",
-                      "comments","tags","nexusFileStatus","notes","priority"):
+                      "comments","tags","nexusFileStatus","notes","priority","url"):
                 if cp.has_option("General", k):
                     out[k] = cp.get("General", k, fallback="").strip()
         # Leer la seccion [installedFiles] para obtener el file_id
@@ -4830,6 +4950,7 @@ class Api:
         self.nemesis_detector = NemesisDetector(base_path, profile_dir, base_path / "mods")
         self.loll = LoadOrderLibrary()
         self.snapshots = SnapshotManager(store.store_dir)
+        self._extension = None  # Referencia a la extension cargada (la asigna ModlistManager)
 
     def handle(self, method, path, body, query):
         try:
@@ -4853,6 +4974,23 @@ class Api:
                 return self._forget_mod(path)
             if path == "/api/mods/forget_all" and method == "POST":
                 return self._forget_all_mods(body)
+            if path.startswith("/api/open_mod_folder/") and method == "POST":
+                import subprocess as _subprocess
+                import sys as _sys
+                modname = urllib.parse.unquote(path[len("/api/open_mod_folder/"):])
+                mod_dir = self.reader.mods_dir / modname
+                if not mod_dir.exists():
+                    return (HTTPStatus.NOT_FOUND, {"ok": False, "error": "Carpeta no encontrada"})
+                try:
+                    if _sys.platform == "win32":
+                        _subprocess.Popen(["explorer", str(mod_dir)])
+                    elif _sys.platform == "darwin":
+                        _subprocess.Popen(["open", str(mod_dir)])
+                    else:
+                        _subprocess.Popen(["xdg-open", str(mod_dir)])
+                    return (HTTPStatus.OK, {"ok": True})
+                except Exception as e:
+                    return (HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(e)})
             if path.startswith("/api/mods/") and method == "POST":
                 return self._update_mod(path, body)
             if path.startswith("/api/collapse/") and method == "POST":
@@ -5018,6 +5156,24 @@ class Api:
                 if not ok:
                     return (HTTPStatus.NOT_FOUND, {"ok": False, "error": "Respaldo no encontrado"})
                 return (HTTPStatus.OK, {"ok": True})
+            # Extension API: rutas que empiezan con /api/translation/ se delegan
+            # al modulo de extension si esta cargado
+            if path.startswith("/api/translation/"):
+                if self._extension is not None:
+                    try:
+                        ext_path = path[len("/api/translation/"):]
+                        result = self._extension.handle_api(ext_path, method, body, {
+                            "store_dir": str(self.store.store_dir),
+                            "mods_dir": str(self.reader.mods_dir),
+                            "reader": self.reader,
+                            "organizer": self.organizer,
+                        })
+                        if result is not None:
+                            return result
+                    except Exception as e:
+                        if self.logger: self.logger.exception("Extension API error: %s", e)
+                        return (HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(e)})
+                return (HTTPStatus.NOT_FOUND, {"ok": False, "error": "Extension no disponible"})
             return (HTTPStatus.NOT_FOUND, {"ok": False, "error": "Ruta no encontrada"})
         except Exception as e:
             if self.logger: self.logger.exception("API error %s %s: %s", method, path, e)
@@ -5867,12 +6023,15 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
     # ==================== Lifecycle ====================
     def init(self, organizer):
         self._organizer = organizer
+        self._extension = None  # Extension opcional (modlist_manager_traduction.py)
         self._debug_log("=" * 60)
         self._debug_log("[INIT] Modlist Manager init() llamado")
         self._debug_log(f"[INIT] basePath() = {organizer.basePath() if organizer else 'None'}")
         self._debug_log(f"[INIT] cwd() = {Path.cwd()}")
         self._load_translations()
         self._debug_log(f"[INIT] Idioma: {self._language} ({len(self._translations)} traducciones)")
+        # Cargar extension opcional si existe
+        self._load_extension()
         # Por defecto el servidor NO arranca al iniciar MO2.
         # Solo arranca cuando el usuario abre el plugin (display).
         # Si start_on_mo2_startup esta activado, arrancar el servidor ahora.
@@ -5889,6 +6048,49 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
         else:
             self._debug_log("[INIT] start_on_mo2_startup=False — servidor se arrancara on-demand al abrir el plugin")
         return True
+
+    def _load_extension(self):
+        """Detecta y carga la extension modlist_manager_traduction.py si existe.
+
+        Busca en:
+        1. La misma carpeta que este plugin (directorio de plugins de MO2)
+        2. El directorio base de MO2 / plugins
+
+        Si encuentra el archivo, lo importa y almacena el modulo en
+        self._extension. Si no existe, self._extension queda en None y el
+        plugin funciona exactamente igual que sin extension.
+        """
+        import importlib.util
+        candidates = []
+        # Buscar en el mismo directorio que este archivo
+        try:
+            this_dir = Path(__file__).parent
+            candidates.append(this_dir / "modlist_manager_traduction.py")
+        except Exception:
+            pass
+        # Buscar en <MO2>/plugins/
+        if self._organizer is not None:
+            try:
+                plugins_dir = Path(self._organizer.basePath()) / "plugins"
+                candidates.append(plugins_dir / "modlist_manager_traduction.py")
+            except Exception:
+                pass
+        for ext_path in candidates:
+            if ext_path.exists() and ext_path.is_file():
+                try:
+                    self._debug_log(f"[EXT] Cargando extension: {ext_path}")
+                    spec = importlib.util.spec_from_file_location("modlist_manager_traduction", str(ext_path))
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    self._extension = mod
+                    self._debug_log("[EXT] Extension cargada correctamente")
+                    return
+                except Exception as e:
+                    self._debug_log(f"[EXT] Error cargando extension: {e}")
+                    self._extension = None
+                    return
+        self._debug_log("[EXT] No se encontro modlist_manager_traduction.py — funcionando sin extension")
+        self._extension = None
 
     def _start_heartbeat_monitor(self):
         """Inicia un hilo que monitorea el heartbeat y apaga el servidor tras 60s sin actividad."""
@@ -5940,7 +6142,7 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
         return self._tr("Web UI to manage the MO2 mod list: priorities, separators, categories, comments, links. Import/Export from loadorderlibrary.com, list editor, Nemesis/Pandora/Custom panel, multi-language, snapshots.")
 
     def version(self):
-        return mobase.VersionInfo(3, 0, 1)
+        return mobase.VersionInfo(3, 2, 0)
 
     def isActive(self):
         return self._organizer is not None
@@ -6182,6 +6384,8 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
             api = Api(reader=reader, store=store, profile_dir=profile_dir,
                       base_path=base_path, translations_dir=None,
                       organizer=self._organizer, logger=self._logger)
+            # Pasar referencia de la extension al API si esta cargada
+            api._extension = self._extension
         except Exception as e:
             self._debug_log(f"[SERVER] Error creando API: {e}")
             import traceback
@@ -6220,7 +6424,48 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
                         self.send_header("Content-type", "text/html; charset=utf-8")
                         self.send_header("Cache-Control", "no-store")
                         self.end_headers()
-                        self.wfile.write(HTML_CONTENT.encode("utf-8"))
+                        html = HTML_CONTENT
+                        # Inyectar contenido de la extension si existe
+                        plugin_self._debug_log(f"[EXT] Sirviendo HTML, _extension is None: {plugin_self._extension is None}")
+                        if plugin_self._extension is not None:
+                            try:
+                                ext = plugin_self._extension
+                                plugin_self._debug_log(f"[EXT] get_tab_html: {hasattr(ext, 'get_tab_html')}")
+                                plugin_self._debug_log(f"[EXT] get_panel_html: {hasattr(ext, 'get_panel_html')}")
+                                plugin_self._debug_log(f"[EXT] get_css: {hasattr(ext, 'get_css')}")
+                                plugin_self._debug_log(f"[EXT] get_js: {hasattr(ext, 'get_js')}")
+                                if hasattr(ext, 'get_tab_html'):
+                                    tab_html = ext.get_tab_html()
+                                    html = html.replace("<!--EXTENSION_TAB-->", tab_html)
+                                    plugin_self._debug_log(f"[EXT] Tab HTML inyectado ({len(tab_html)} chars)")
+                                if hasattr(ext, 'get_panel_html'):
+                                    panel_html = ext.get_panel_html()
+                                    html = html.replace("<!--EXTENSION_PANEL-->", panel_html)
+                                    plugin_self._debug_log(f"[EXT] Panel HTML inyectado ({len(panel_html)} chars)")
+                                if hasattr(ext, 'get_css'):
+                                    css = ext.get_css()
+                                    html = html.replace("/*EXTENSION_CSS*/", css)
+                                    plugin_self._debug_log(f"[EXT] CSS inyectado ({len(css)} chars)")
+                                if hasattr(ext, 'get_js'):
+                                    js = ext.get_js()
+                                    html = html.replace("//EXTENSION_JS", js)
+                                    plugin_self._debug_log(f"[EXT] JS inyectado ({len(js)} chars)")
+                                # Verificar que los marcadores fueron reemplazados
+                                remaining = []
+                                if "<!--EXTENSION_TAB-->" in html: remaining.append("TAB")
+                                if "<!--EXTENSION_PANEL-->" in html: remaining.append("PANEL")
+                                if "/*EXTENSION_CSS*/" in html: remaining.append("CSS")
+                                if "//EXTENSION_JS" in html: remaining.append("JS")
+                                if remaining:
+                                    plugin_self._debug_log(f"[EXT] WARNING: Marcadores no reemplazados: {remaining}")
+                                else:
+                                    plugin_self._debug_log("[EXT] Todos los marcadores reemplazados correctamente")
+                            except Exception as e:
+                                plugin_self._debug_log(f"[EXT] Error inyectando HTML: {e}")
+                                import traceback
+                                plugin_self._debug_log(traceback.format_exc())
+                        self.wfile.write(html.encode("utf-8"))
+                        plugin_self._debug_log(f"[EXT] HTML servido ({len(html)} bytes)")
                         return
 
                     if path == "/i18n.json" and method == "GET":
@@ -6228,8 +6473,17 @@ class ModlistManager(mobase.IPluginTool if mobase else object):
                         self.send_header("Content-type", "application/json; charset=utf-8")
                         self.send_header("Cache-Control", "no-store")
                         self.end_headers()
+                        # Fusionar traducciones del plugin principal con las de la extension
+                        merged_strings = dict(plugin_self._translations)
+                        if plugin_self._extension is not None:
+                            try:
+                                ext_strings = plugin_self._extension.get_translations(plugin_self._language, plugin_self._organizer)
+                                if isinstance(ext_strings, dict):
+                                    merged_strings.update(ext_strings)
+                            except Exception as e:
+                                plugin_self._debug_log(f"[EXT] Error cargando traducciones: {e}")
                         self.wfile.write(json.dumps({"language": plugin_self._language,
-                            "strings": plugin_self._translations}, ensure_ascii=False).encode("utf-8"))
+                            "strings": merged_strings}, ensure_ascii=False).encode("utf-8"))
                         return
 
                     if path.startswith("/api/"):
