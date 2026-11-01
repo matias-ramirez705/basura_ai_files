@@ -1,0 +1,23 @@
+Actualmente:
+
+Enhanced Khajiit https://www.nexusmods.com/skyrimspecialedition/mods/176481
+Este es el mod actual de texturas mejoradas que estoy usando, con estos complementos:
+Enhanced Khajiit - Khajiit Paw Patch https://www.nexusmods.com/skyrimspecialedition/mods/177140
+Enhanced Khajiit Better Claws and Gauntlets Patch https://www.nexusmods.com/skyrimspecialedition/mods/177134
+K.C.C.E Enhanced Khajiit Patch https://www.nexusmods.com/skyrimspecialedition/mods/177167
+Enhanced Khajiit - Ja-Kha'jay - Better Claws and Gauntlets﻿ Patches https://www.nexusmods.com/skyrimspecialedition/mods/177324
+Invisible Footwear For Khajiit Paw (Option A) https://www.nexusmods.com/skyrimspecialedition/mods/189757
+Invisible Footwear For Khajiit-AE https://www.nexusmods.com/skyrimspecialedition/mods/189757 (archivo opcional)
+Enhanced Khajiit-Beard Color Correction https://www.nexusmods.com/skyrimspecialedition/mods/190645
+
+Y estas texturas que están pensadas para Enhanced Khajiit
+Enhanced Khajiit Alt Texture - Bare Chested Male https://www.nexusmods.com/skyrimspecialedition/mods/183540
+EK Alt Texture - Male Barechested Grayscale https://www.nexusmods.com/skyrimspecialedition/mods/183540 (archivo opcional)
+
+Texturas antiguas que el creador dijo que no eran compaitbles con  Enhanced Khajiit asi que use Enhanced Khajiit Alt Texture - Bare Chested Male (mismo autor pero pensadas para el uso de Enhanced Khajiit, pero estas no tienen las rayas y marcas de las texturas antiguas)
+
+Khajiit Male Tiger Texture https://www.nexusmods.com/skyrimspecialedition/mods/102072 (archivo Khajiit Male Tiger, Missing Head Specular)
+
+Muscular Khajiit Textures and Skeleton https://www.nexusmods.com/skyrimspecialedition/mods/900?tab=description (Muscular Khajiit Textures - Stripes)
+
+Khajiit Male Lion https://www.nexusmods.com/skyrimspecialedition/mods/81713 (mismas de Khajiit Male Tiger pero sin rayas según el autor) (descargue Striped Lion - zzjay feet variente con otras manchas y rayas y Lion - zzjay feet esta esta sin rayas, se puede usar para Striped Lion y Khajiit Male Tiger Texture)
